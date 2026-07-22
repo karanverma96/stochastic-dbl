@@ -27,9 +27,6 @@
 //
 // DL gives fast *positive* answers; BL gives fast *negative* answers.
 // Anything neither label can resolve falls back to a pruned BFS.
-//
-// This first pass wires up construction (DL/BL labeling). Query and
-// dynamic-update logic land in the next commit.
 
 constexpr int kMaxLabelBits = 128; // upper bound on landmark / leaf-hash label size
 using Bitset = std::bitset<kMaxLabelBits>;
@@ -74,11 +71,36 @@ public:
         }
     }
 
-    // TODO: implement in the next commit (query processing framework).
-    bool query(int u, int v) const { return false; }
+    // Query processing framework (Algorithm 2).
+    bool query(int u, int v) const {
+        if (u == v) return true;
+        if (dlIntersect(u, v)) return true;            // DL proves reachable
+        if (!blContain(u, v)) return false;             // BL proves unreachable
+        if (dlIntersect(v, u)) return false;             // Theorem 1 early exit
+        if (dlIntersect(u, u) || dlIntersect(v, v)) return false; // Theorem 2
+        return prunedBFS(u, v);
+    }
 
-    // TODO: implement in the next commit (dynamic edge-insertion update).
-    void insertEdge(int u, int v) { /* not yet implemented */ }
+    // Edge-insertion update (Algorithm 3 + its symmetric/BL counterparts).
+    // Updates DL_in/DL_out and BL_in/BL_out for all affected vertices, then
+    // adds the edge to the underlying graph.
+    void insertEdge(int u, int v) {
+        g_.ensureVertex(std::max(u, v));
+        int n = g_.numVertices();
+        growLabels(n);
+
+        if (!dlIntersect(u, v)) {
+            propagateForward(v, DLin_[u], DLin_);
+            propagateBackward(u, DLout_[v], DLout_);
+        }
+        // BL propagation follows the same structure: new reachability from
+        // u extends forward from v, new reachability into v extends
+        // backward from u.
+        propagateForward(v, BLin_[u], BLin_);
+        propagateBackward(u, BLout_[v], BLout_);
+
+        g_.addEdge(u, v);
+    }
 
     // --- accessors, mainly for testing/inspection ---
     const Bitset& dlIn(int v) const { return DLin_[v]; }
@@ -91,6 +113,15 @@ private:
     std::vector<int> landmarks_;
     std::vector<int> sourceLeaves_, sinkLeaves_;
     std::vector<Bitset> DLin_, DLout_, BLin_, BLout_;
+
+    void growLabels(int n) {
+        if (static_cast<int>(DLin_.size()) < n) {
+            DLin_.resize(n);
+            DLout_.resize(n);
+            BLin_.resize(n);
+            BLout_.resize(n);
+        }
+    }
 
     // Approximate centrality M(u) = |Pre(u)| * |Suc(u)|, take top-k (Section 4.1).
     void selectLandmarks() {
@@ -140,6 +171,75 @@ private:
                     q.push(x);
                 }
             }
+        }
+    }
+
+    bool dlIntersect(int x, int y) const { return (DLout_[x] & DLin_[y]).any(); }
+
+    bool blContain(int x, int y) const {
+        return isSubset(BLin_[x], BLin_[y]) && isSubset(BLout_[y], BLout_[x]);
+    }
+
+    // Pruned BFS fallback: explore Suc(u), skipping vertices whose
+    // reachability is already resolvable by DL (redundant) or ruled out by
+    // BL (provably can't reach v).
+    bool prunedBFS(int u, int v) const {
+        std::queue<int> q;
+        std::vector<char> visited(g_.numVertices(), 0);
+        q.push(u);
+        visited[u] = 1;
+        while (!q.empty()) {
+            int w = q.front(); q.pop();
+            for (int x : g_.Suc(w)) {
+                if (x == v) return true;
+                if (visited[x]) continue;
+                if (dlIntersect(u, x)) continue;      // already covered by DL
+                if (!blContain(x, v)) continue;        // BL proves x can't reach v
+                visited[x] = 1;
+                q.push(x);
+            }
+        }
+        return false;
+    }
+
+    // Propagate `incoming` into label[x] for all x reachable forward from
+    // `start`, stopping a branch early once incoming is already a subset of
+    // label[x] (Algorithm 3's pruning: descendants of x are unaffected).
+    void propagateForward(int start, const Bitset& incoming, std::vector<Bitset>& label) {
+        if (incoming.none()) return;
+        std::queue<int> q;
+        q.push(start);
+        while (!q.empty()) {
+            int p = q.front(); q.pop();
+            for (int x : g_.Suc(p)) {
+                if (!isSubset(incoming, label[x])) {
+                    label[x] |= incoming;
+                    q.push(x);
+                }
+            }
+        }
+        // The start vertex itself also receives the update.
+        if (!isSubset(incoming, label[start])) {
+            label[start] |= incoming;
+        }
+    }
+
+    // Symmetric propagation along Pre edges (used for DL_out / BL_out updates).
+    void propagateBackward(int start, const Bitset& incoming, std::vector<Bitset>& label) {
+        if (incoming.none()) return;
+        std::queue<int> q;
+        q.push(start);
+        while (!q.empty()) {
+            int p = q.front(); q.pop();
+            for (int x : g_.Pre(p)) {
+                if (!isSubset(incoming, label[x])) {
+                    label[x] |= incoming;
+                    q.push(x);
+                }
+            }
+        }
+        if (!isSubset(incoming, label[start])) {
+            label[start] |= incoming;
         }
     }
 };
