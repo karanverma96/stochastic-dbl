@@ -2,3 +2,6 @@
 *.out
 build/
 *.gz.tmp
+
+benchmark
+data/wiki-Vote.txt
