@@ -1,6 +1,7 @@
 #pragma once
 #include <cmath>
 #include <cstdint>
+#include <stdexcept>
 
 // Given a target absolute error tolerance `epsilon` and failure probability
 // `delta`, returns the minimum number of Monte Carlo samples N such that
