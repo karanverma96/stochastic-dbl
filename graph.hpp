@@ -1,18 +1,16 @@
 #pragma once
 #include <vector>
-#include <cstdint>
 #include <algorithm>
 
-// Simple directed graph stored as forward and reverse adjacency lists.
-// Vertices are identified by contiguous indices [0, n).
+// Directed graph over contiguous vertex ids [0, n), kept in both directions so
+// that backward traversals are as cheap as forward ones -- DBL needs both.
 class Graph {
 public:
     explicit Graph(int n = 0) : n_(n), suc_(n), pre_(n) {}
 
     int numVertices() const { return n_; }
 
-    // Grow the vertex set to at least `n` vertices (used when inserting
-    // edges that reference new vertex ids).
+    // Only ever grows, so addEdge can call it with max(u, v) and cover both
     void ensureVertex(int v) {
         if (v >= n_) {
             n_ = v + 1;
@@ -34,7 +32,8 @@ public:
     int inDegree(int u) const { return static_cast<int>(pre_[u].size()); }
 
 private:
+    // Named after the paper's Suc(u) / Pre(u)
     int n_;
-    std::vector<std::vector<int>> suc_; // forward adjacency: Suc(u)
-    std::vector<std::vector<int>> pre_; // reverse adjacency: Pre(u)
+    std::vector<std::vector<int>> suc_;
+    std::vector<std::vector<int>> pre_;
 };
