@@ -10,5 +10,5 @@ voted on user B's request for adminship.
 Unzip before running the benchmark:
 ```
 gunzip -k wiki-Vote.txt.gz
-../benchmark/benchmark wiki-Vote.txt
+../benchmark wiki-Vote.txt
 ```
