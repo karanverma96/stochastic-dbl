@@ -1,4 +1,4 @@
-# dbl-uncertain-reachability
+# stochastic-dbl
 
 An independent reimplementation exploring source-to-target (s-t) reachability
 estimation on large-scale, **dynamic, uncertain directed graphs** — extending
