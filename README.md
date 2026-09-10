@@ -17,8 +17,8 @@ setting.
 ## Problem Statement
 
 Designing an efficient algorithm to answer s-t reachability queries on
-**large, dynamic, uncertain directed graphs** — graphs where edges can be
-inserted/deleted over time, and each edge carries a probability of existing.
+**large, dynamic, uncertain directed graphs** — graphs that grow by edge
+insertion over time, and where each edge carries a probability of existing.
 
 In such graphs, the answer to an s-t reachability query is itself a
 **probability**: the likelihood that a path exists from `s` to `t` across
@@ -31,13 +31,15 @@ are used instead.
 
 ## Approach
 
-### 1. Base Index: DBL (Dynamic reachability via Bidirectional Leaf-DL labeling)
+### 1. Base Index: DBL (Dynamic Landmark + Bidirectional Leaf)
 Built on top of **DBL**, a published state-of-the-art dynamic reachability
 index for large directed graphs (Lyu et al., *"DBL: Efficient Reachability
 Queries on Dynamic Graphs"*, arXiv:2101.09441). DBL avoids maintaining a full
 DAG/topological structure and instead uses **Dynamic Landmark (DL)** labels
 combined with **Bidirectional Leaf (BL)** labels to answer reachability
-queries efficiently, while supporting fast edge insertions/deletions.
+queries efficiently, while supporting fast edge insertions. (DBL targets
+*"insertion-only updates"*; the paper lists deletion as future work, and this
+reimplementation keeps the same scope.)
 
 ### 2. Extension to Uncertain Graphs
 The deterministic DBL index answers "is `t` reachable from `s`?" with a
@@ -72,13 +74,15 @@ using one of three standard schemes from influence/uncertain-graph literature:
 |---|---|
 | **Uniform** | All edges get the same fixed probability (e.g. 0.1 or 0.2) |
 | **Trivalency** | Each edge's probability is drawn uniformly at random from `{0.1, 0.01, 0.001}` |
-| **Weighted Cascade** | For edge `(u, v)`, probability = `1 / (deg(u) + deg(v))` |
+| **Weighted Cascade** | For edge `(u, v)`, probability = `1 / indeg(v)` |
 
 ### 5. Dynamic Query Workload
 Queries are issued at runtime against the current graph snapshot; after a
-batch of queries, edges are inserted/deleted, and further queries are run
-— testing the index's ability to handle reachability estimation under
-graph evolution without full recomputation.
+batch of queries, edges are inserted, and the *same* query batch is run
+again against the updated index — testing the index's ability to keep
+answering under graph evolution without full recomputation. `benchmark.cpp`
+reports both rounds, so the shift in `reachable_fraction` shows what the
+insertions actually changed.
 
 ---
 
@@ -103,65 +107,113 @@ graph evolution without full recomputation.
 
 ---
 
+## Build & Run
+
+Everything except the three `.cpp` entry points is header-only, so there is no
+build system — each program is a single `g++` invocation.
+
+```bash
+# Correctness tests (both exit non-zero on failure)
+g++ -std=c++17 -O2 -o test_dbl     test_dbl.cpp     && ./test_dbl
+g++ -std=c++17 -O2 -o test_sampler test_sampler.cpp && ./test_sampler
+
+# Benchmark — unzip the dataset first
+gunzip -k data/wiki-Vote.txt.gz
+g++ -std=c++17 -O2 -o benchmark benchmark.cpp && ./benchmark data/wiki-Vote.txt
+```
+
+`test_dbl` runs in seconds. The benchmark's Monte Carlo section takes a few
+minutes: at `epsilon=0.02, delta=0.05` Hoeffding's bound calls for 4,612
+possible worlds per query estimate.
+
+---
+
 ## Benchmarks
 
-Benchmarked in a Cowork-managed Linux VM (reported: AMD Ryzen 5 5625U with
-Radeon Graphics, 2 cores, 2.8Gi RAM, Ubuntu 6.8.0-124-generic kernel),
-compiler: g++ 11.4.0 (Ubuntu 11.4.0-1ubuntu1~22.04.3), flags:
-`-std=c++17 -O2`. Note: this reflects the VM environment's reported specs,
-not necessarily raw host hardware — `lscpu` shows `Hypervisor vendor:
-Microsoft`, confirming this is a virtualized 2-core allocation, not a
-dedicated benchmarking machine.
+Machine: Intel Core i7-8750H (6 cores / 12 threads), Ubuntu 26.04.1, g++
+15.2.0, flags `-std=c++17 -O2`. Dataset: `data/wiki-Vote.txt` (7,115 nodes,
+103,689 edges, no duplicate rows).
 
-Dataset: `data/wiki-Vote.txt` (7,115 nodes, 103,689 edges).
+This is a personal machine, not an isolated benchmarking rig, and its CPU
+governor is `powersave` with a 800–4100 MHz range — a single run means very
+little. Every figure below is the **median of 5 runs pinned to one core**
+(`taskset -c 2`), after a discarded warm-up run, with the range given
+alongside. The estimates and reachability fractions, by contrast, are
+seed-fixed and came out byte-identical in all 5 runs.
 
-Benchmarked in a personal/local environment, not an isolated lab setup —
-numbers are indicative of relative performance (DBL query speed vs. Monte
-Carlo sampling cost), not absolute guarantees. The DBL index build/query/
-insertion numbers below are the median of 3 full runs of
-`./benchmark data/wiki-Vote.txt`. The Monte Carlo numbers come from the
-same unmodified `MonteCarloSampler::estimate()` / `UncertainGraph` code,
-run in per-query batches so each measurement fit inside the shell's
-per-command time budget (a full run's Monte Carlo section takes several
-minutes end-to-end); timings below are medians across 3 repeats of the
-5-query, 3-scheme sweep the benchmark performs (k=64 landmarks, k'=64 leaf
-hash buckets, epsilon=0.02, delta=0.05, so 4,612 samples per estimate via
-Hoeffding's inequality).
+Parameters: k=64 landmarks, k'=64 leaf-hash buckets, epsilon=0.02,
+delta=0.05 — so 4,612 samples per estimate via Hoeffding's inequality.
 
-| Metric | Median | Range (3 runs) |
+| Metric | Median | Range (5 runs) |
 |---|---|---|
-| Dataset load time | 24.1 ms | 23.3 – 24.7 ms |
-| DBL index build time | 444.5 ms | 443.6 – 447.1 ms |
-| DBL query throughput | 118.6M queries/sec | 114.9M – 122.9M queries/sec |
-| DBL query avg latency | 0.0084 µs | 0.0081 – 0.0087 µs |
-| Edge insertion avg latency | 0.52 µs | 0.47 – 0.62 µs |
-| Monte Carlo, Uniform(p=0.1) | 8,961 ms/query | 8,886 – 9,073 ms/query |
-| Monte Carlo, Trivalency | 7,296 ms/query | 7,191 – 7,405 ms/query |
-| Monte Carlo, WeightedCascade | 6,078 ms/query | 6,023 – 6,219 ms/query |
+| Dataset load time | 63.1 ms | 58.2 – 75.5 ms |
+| DBL index build time | 47.1 ms | 40.2 – 49.1 ms |
+| DBL query throughput | 54.6M queries/sec | 45.7M – 65.6M queries/sec |
+| DBL query avg latency | 0.0183 µs | 0.0153 – 0.0219 µs |
+| Edge insertion avg latency | 0.51 µs | 0.46 – 0.67 µs |
+| Query throughput after 2,000 insertions | 57.2M queries/sec | 38.8M – 60.7M queries/sec |
+| Monte Carlo, Uniform(p=0.1) | 53.8 ms/query | 52.4 – 61.0 ms/query |
+| Monte Carlo, Trivalency | 14.4 ms/query | 12.8 – 17.2 ms/query |
+| Monte Carlo, WeightedCascade | 0.33 ms/query | 0.31 – 0.46 ms/query |
 
-**Why the gap is this large.** A DBL query is a bitset intersection: it
+Reachable fraction over 1M random pairs: **0.2353** before the insertions,
+**0.3238** after — the same in every run.
+
+**Why queries are this cheap.** A DBL query is a bitset intersection: it
 checks whether a landmark in `DL_out(u)` also appears in `DL_in(v)` (a
 handful of 128-bit AND/OR ops), with BL leaf-hash bits available to
 short-circuit negative answers — no graph traversal at all in the common
-case. That's why query throughput lands north of 100M queries/sec with
-sub-hundredth-of-a-microsecond latency: the cost is a fixed, tiny number of
-word-level bit operations regardless of graph size.
+case. Instrumenting the 1M-query run shows how rarely the fallback is
+needed: 23.5% of queries are answered by DL, 75.9% by BL, and only 0.63%
+reach the pruned BFS. (The two theorem-based early exits never fire on this
+dataset — everything they could catch, BL has already caught.)
 
-Monte Carlo reachability estimation is solving a fundamentally different
-problem: instead of one deterministic graph, `UncertainGraph` assigns each
-edge an existence probability, and there's no closed-form way to get
-P(s reaches t) without sampling. Each `estimate()` call draws
-`N = ceil(ln(2/delta) / (2*epsilon^2))` independent "possible worlds"
-(4,612 of them at epsilon=0.02, delta=0.05), and for *each* sampled world
-it re-samples every one of the 103,689 edges and runs a fresh BFS from `s`
-looking for `t`. That's why one query estimate costs seconds instead of
-nanoseconds: it's ~4,600 full graph traversals, not a handful of bit ops,
-and the count is dictated by the Hoeffding accuracy bound, not by anything
-tunable away without giving up statistical guarantees. The three
-probability schemes differ in cost mainly through how dense the sampled
-worlds end up (WeightedCascade's degree-based probabilities produce
-sparser worlds than the flat p=0.1 Uniform scheme, which is reflected in
-the ~35% spread between the fastest and slowest scheme above).
+**Why Monte Carlo still costs milliseconds.** There is no closed form for
+P(s reaches t), so each `estimate()` call draws 4,612 independent possible
+worlds. It does not materialise them: `lazyReachable()` walks outward from
+`s` and draws an edge's coin only when the search actually reaches that
+edge. Edges the search never reaches cannot lie on an s-t path, so the
+outcome is distributed exactly as if the whole world had been sampled first
+— but on this dataset a full sample would waste 99% of its coin flips.
+
+That is also why the three schemes differ so sharply in cost: lower edge
+probabilities make the search die out sooner, so WeightedCascade's worlds
+are explored barely at all compared with the flat p=0.1 Uniform scheme.
+
+### What the estimates mean (and their resolution limit)
+
+| Scheme | avg estimate over the 5 query pairs |
+|---|---|
+| Uniform (p=0.1) | 0.0573 |
+| Trivalency | 0.0076 |
+| WeightedCascade | 0.0000 |
+
+The benchmark picks query pairs that are reachable when *every* edge is
+present — without that filter roughly 76% of random pairs on this graph have
+probability exactly zero, and the column would say nothing about the schemes.
+
+`WeightedCascade` reporting exactly `0.0000` is the estimator's resolution
+limit, not a defect. With N = 4,612 samples the smallest non-zero value
+expressible is `1/4612 ≈ 2.2e-4`. The benchmark's pairs are 3 to 6 hops
+apart, and at WeightedCascade's typical `p ≈ 0.023` a three-hop path carries
+roughly `1.2e-5` — about 18x below that floor, so no sample ever succeeds.
+Hoeffding's bound is on **absolute** error, so an estimator that always
+returned 0 would satisfy it here too; resolving probabilities this small
+needs a relative-error method instead.
+
+Trivalency is the instructive contrast: its average `p` is comparable to
+WeightedCascade's, yet it estimates `0.0076`. What matters is not the
+average but whether paths exist whose edges are *all* high-probability —
+Trivalency draws from {0.1, 0.01, 0.001}, so a three-hop path with all three
+edges at 0.1 has probability `1e-3`, comfortably above the floor.
+
+### Scale, relative to the paper
+
+`wiki-Vote` is small. The DBL paper's smallest dataset is Email (265,214
+vertices / 420,045 edges) and its largest is LiveJournal (4.8M / 69M); this
+graph is roughly 40x smaller than the smallest of them. The numbers above
+describe this implementation on this graph and should not be read as
+reproducing or comparing against the paper's results.
 
 ---
 
@@ -173,15 +225,15 @@ the ~35% spread between the fastest and slowest scheme above).
   accuracy/confidence requirements, instead of guessing `N`
 - Trade-offs across the three edge-probability assignment schemes and how
   they affect reachability estimates on real-world graphs
-- Handling reachability queries under graph evolution (inserts/deletes)
+- Handling reachability queries under graph evolution (edge insertions)
   without full index recomputation
 
 ---
 
 ## References
 
-- Lyu, B. et al. *"DBL: Efficient Reachability Queries on Dynamic Graphs."*
-  [arXiv:2101.09441](https://arxiv.org/abs/2101.09441)
+- Lyu, Q., Li, Y., He, B., Gong, B. *"DBL: Efficient Reachability Queries on
+  Dynamic Graphs."* [arXiv:2101.09441](https://arxiv.org/abs/2101.09441)
 - Hoeffding, W. (1963). *"Probability Inequalities for Sums of Bounded
   Random Variables."*
 - SNAP Datasets — https://snap.stanford.edu/data/
