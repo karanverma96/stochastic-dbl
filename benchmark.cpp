@@ -23,6 +23,8 @@ int main(int argc, char** argv) {
     std::cout << "Dataset: " << path << "\n";
     std::cout << "  nodes=" << loaded.numVertices
                << "  edges=" << loaded.edges.size()
+               << "  duplicates_dropped=" << loaded.duplicatesDropped
+               << "  malformed_lines=" << loaded.malformedLines
                << "  load_time_ms=" << ms(t0, t1) << "\n\n";
 
     Graph g(loaded.numVertices);
@@ -55,6 +57,20 @@ int main(int argc, char** argv) {
                << "  avg_latency_us=" << (queryMs * 1000.0 / numQueries)
                << "  reachable_fraction=" << (double)reachableCount / numQueries << "\n\n";
 
+    // Pairs for the Monte Carlo section, picked before the insertions so they
+    // match the edge list the UncertainGraph is built from. Only pairs that are
+    // reachable with every edge present: about 76% of random pairs are not, and
+    // those estimate zero under any scheme, which says nothing about the scheme.
+    std::vector<std::pair<int,int>> sampleQueries;
+    for (int tries = 0; tries < 1000000 && sampleQueries.size() < 5; ++tries) {
+        int s = vdist(rng), t = vdist(rng);
+        if (s != t && idx.query(s, t)) sampleQueries.emplace_back(s, t);
+    }
+    if (sampleQueries.empty()) {
+        std::cerr << "no reachable vertex pair found; skipping the Monte Carlo section\n";
+        return 1;
+    }
+
     // --- Edge insertion cost ---
     int numInserts = 2000;
     std::vector<std::pair<int,int>> newEdges(numInserts);
@@ -69,10 +85,28 @@ int main(int argc, char** argv) {
                << "  total_time_ms=" << insertMs
                << "  avg_latency_us=" << (insertMs * 1000.0 / numInserts) << "\n\n";
 
+    // --- Query throughput again, against the updated graph ---
+    // Same query set as the first round, so the two rows line up:
+    // reachable_fraction shows what the insertions changed, and the timing
+    // shows the index still answering without a rebuild.
+    t0 = Clock::now();
+    long long reachableAfter = 0;
+    for (auto& q : queries) reachableAfter += idx.query(q.first, q.second);
+    t1 = Clock::now();
+    double queryMsAfter = ms(t0, t1);
+    std::cout << "Query throughput after updates:\n";
+    std::cout << "  queries=" << numQueries
+               << "  total_time_ms=" << queryMsAfter
+               << "  queries_per_sec=" << (numQueries / (queryMsAfter / 1000.0))
+               << "  avg_latency_us=" << (queryMsAfter * 1000.0 / numQueries)
+               << "  reachable_fraction=" << (double)reachableAfter / numQueries
+               << "  (before=" << (double)reachableCount / numQueries << ")\n\n";
+
     // --- Uncertain graph / Monte Carlo pipeline across all 3 schemes ---
     std::cout << "Uncertain-graph Monte Carlo reachability (epsilon=0.02, delta=0.05):\n";
-    std::vector<std::pair<int,int>> sampleQueries;
-    for (int i = 0; i < 5; ++i) sampleQueries.push_back({vdist(rng), vdist(rng)});
+    std::cout << "  query pairs (all reachable in the deterministic graph):";
+    for (auto& q : sampleQueries) std::cout << " " << q.first << "->" << q.second;
+    std::cout << "\n";
 
     for (auto scheme : {ProbabilityScheme::Uniform, ProbabilityScheme::Trivalency, ProbabilityScheme::WeightedCascade}) {
         std::string name = scheme == ProbabilityScheme::Uniform ? "Uniform(p=0.1)"
