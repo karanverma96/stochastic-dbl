@@ -5,6 +5,9 @@ estimation on large-scale, **dynamic, uncertain directed graphs** — extending
 a state-of-the-art deterministic reachability index to the probabilistic
 setting.
 
+For how the index, the update path and the sampler actually work, see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 > This project is inspired by academic research I conducted at IIT Jammu on
 > uncertain graph reachability. The original codebase, datasets, and specific
 > experimental results are confidential to the institution. This repository
@@ -100,6 +103,8 @@ insertions actually changed.
 ├── test_sampler.cpp           # Sampler unit tests
 ├── test_dbl.cpp               # DBL correctness tests
 ├── benchmark.cpp              # Query throughput & accuracy measurement
+├── docs/
+│   └── ARCHITECTURE.md        # Design walkthrough with flow diagrams
 └── data/
     ├── README.md               # Dataset attribution
     └── wiki-Vote.txt.gz        # SNAP Wiki-Vote dataset
@@ -122,9 +127,11 @@ gunzip -k data/wiki-Vote.txt.gz
 g++ -std=c++17 -O2 -o benchmark benchmark.cpp && ./benchmark data/wiki-Vote.txt
 ```
 
-`test_dbl` runs in seconds. The benchmark's Monte Carlo section takes a few
-minutes: at `epsilon=0.02, delta=0.05` Hoeffding's bound calls for 4,612
-possible worlds per query estimate.
+Both test binaries finish in under a second, and so does the whole benchmark:
+about 0.35 s end to end, Monte Carlo included. At `epsilon=0.02, delta=0.05`
+Hoeffding's bound calls for 4,612 possible worlds per query estimate, but the
+sampler never materialises one — see *Why Monte Carlo still costs
+milliseconds* below.
 
 ---
 
@@ -138,23 +145,26 @@ This is a personal machine, not an isolated benchmarking rig, and its CPU
 governor is `powersave` with a 800–4100 MHz range — a single run means very
 little. Every figure below is the **median of 5 runs pinned to one core**
 (`taskset -c 2`), after a discarded warm-up run, with the range given
-alongside. The estimates and reachability fractions, by contrast, are
-seed-fixed and came out byte-identical in all 5 runs.
+alongside, measured on mains power. Expect the timings to drift with the
+machine's power and thermal state: an earlier round of this same procedure,
+under an unrecorded power state, came out 1.4–1.7x slower on every row. The
+estimates and reachability fractions, by contrast, are seed-fixed and came
+out byte-identical in all 5 runs.
 
 Parameters: k=64 landmarks, k'=64 leaf-hash buckets, epsilon=0.02,
 delta=0.05 — so 4,612 samples per estimate via Hoeffding's inequality.
 
 | Metric | Median | Range (5 runs) |
 |---|---|---|
-| Dataset load time | 63.1 ms | 58.2 – 75.5 ms |
-| DBL index build time | 47.1 ms | 40.2 – 49.1 ms |
-| DBL query throughput | 54.6M queries/sec | 45.7M – 65.6M queries/sec |
-| DBL query avg latency | 0.0183 µs | 0.0153 – 0.0219 µs |
-| Edge insertion avg latency | 0.51 µs | 0.46 – 0.67 µs |
-| Query throughput after 2,000 insertions | 57.2M queries/sec | 38.8M – 60.7M queries/sec |
-| Monte Carlo, Uniform(p=0.1) | 53.8 ms/query | 52.4 – 61.0 ms/query |
-| Monte Carlo, Trivalency | 14.4 ms/query | 12.8 – 17.2 ms/query |
-| Monte Carlo, WeightedCascade | 0.33 ms/query | 0.31 – 0.46 ms/query |
+| Dataset load time | 38.4 ms | 37.7 – 41.5 ms |
+| DBL index build time | 27.7 ms | 26.8 – 28.1 ms |
+| DBL query throughput | 91.5M queries/sec | 88.7M – 95.3M queries/sec |
+| DBL query avg latency | 0.0109 µs | 0.0105 – 0.0113 µs |
+| Edge insertion avg latency | 0.36 µs | 0.34 – 0.39 µs |
+| Query throughput after 2,000 insertions | 82.5M queries/sec | 80.8M – 83.9M queries/sec |
+| Monte Carlo, Uniform(p=0.1) | 33.9 ms/query | 33.5 – 34.4 ms/query |
+| Monte Carlo, Trivalency | 9.92 ms/query | 9.69 – 10.11 ms/query |
+| Monte Carlo, WeightedCascade | 0.222 ms/query | 0.217 – 0.224 ms/query |
 
 Reachable fraction over 1M random pairs: **0.2353** before the insertions,
 **0.3238** after — the same in every run.
@@ -164,9 +174,10 @@ checks whether a landmark in `DL_out(u)` also appears in `DL_in(v)` (a
 handful of 128-bit AND/OR ops), with BL leaf-hash bits available to
 short-circuit negative answers — no graph traversal at all in the common
 case. Instrumenting the 1M-query run shows how rarely the fallback is
-needed: 23.5% of queries are answered by DL, 75.9% by BL, and only 0.63%
-reach the pruned BFS. (The two theorem-based early exits never fire on this
-dataset — everything they could catch, BL has already caught.)
+needed: 23.51% of queries are answered by DL, 75.84% by BL, 0.02% are
+trivial `u == v` hits, and only 0.63% reach the pruned BFS. (The two
+theorem-based early exits never fire on this dataset — everything they could
+catch, BL has already caught.)
 
 **Why Monte Carlo still costs milliseconds.** There is no closed form for
 P(s reaches t), so each `estimate()` call draws 4,612 independent possible
@@ -194,7 +205,7 @@ probability exactly zero, and the column would say nothing about the schemes.
 
 `WeightedCascade` reporting exactly `0.0000` is the estimator's resolution
 limit, not a defect. With N = 4,612 samples the smallest non-zero value
-expressible is `1/4612 ≈ 2.2e-4`. The benchmark's pairs are 3 to 6 hops
+expressible is `1/4612 ≈ 2.2e-4`. The benchmark's pairs are 3 to 5 hops
 apart, and at WeightedCascade's typical `p ≈ 0.023` a three-hop path carries
 roughly `1.2e-5` — about 18x below that floor, so no sample ever succeeds.
 Hoeffding's bound is on **absolute** error, so an estimator that always
@@ -211,9 +222,11 @@ edges at 0.1 has probability `1e-3`, comfortably above the floor.
 
 `wiki-Vote` is small. The DBL paper's smallest dataset is Email (265,214
 vertices / 420,045 edges) and its largest is LiveJournal (4.8M / 69M); this
-graph is roughly 40x smaller than the smallest of them. The numbers above
-describe this implementation on this graph and should not be read as
-reproducing or comparing against the paper's results.
+graph is 37x smaller than Email by vertex count, though only 4x smaller by
+edge count — it is far denser than its vertex count suggests, at 14.6 edges
+per vertex against Email's 1.6. The numbers above describe this
+implementation on this graph and should not be read as reproducing or
+comparing against the paper's results.
 
 ---
 
