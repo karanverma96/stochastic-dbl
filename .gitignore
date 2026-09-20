@@ -4,4 +4,6 @@ build/
 *.gz.tmp
 
 benchmark
+test_dbl
+test_sampler
 data/wiki-Vote.txt
