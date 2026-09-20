@@ -27,7 +27,7 @@ inline bool bfsReachable(const Graph& g, int s, int t) {
 struct ReachabilityEstimate {
     double probability;
     uint64_t samples;
-    double epsilon; 
+    double epsilon;
     double delta;
 };
 
@@ -51,9 +51,11 @@ public:
     // Many pairs against the same worlds: build one DBL index per world and
     // query it, instead of a BFS per (world, pair).
     //
-    // Worth it only in bulk. Indexing a world costs 2k + k' traversals (~64 at
-    // the sizes below) against one BFS per pair, so it does not pay until the
-    // query list runs into the thousands.
+    // Worth it only in bulk. Indexing a world costs up to 2k + 2k' traversals
+    // -- two per landmark, one per non-empty source bucket and one per
+    // non-empty sink bucket, so at most 96 at the sizes below -- against one
+    // BFS per pair, so it does not pay until the query list runs into the
+    // thousands.
     std::vector<double> batchEstimate(
         const std::vector<std::pair<int,int>>& queries,
         double epsilon = 0.01,

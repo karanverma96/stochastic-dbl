@@ -67,7 +67,8 @@ int main(int argc, char** argv) {
         if (s != t && idx.query(s, t)) sampleQueries.emplace_back(s, t);
     }
     if (sampleQueries.empty()) {
-        std::cerr << "no reachable vertex pair found; skipping the Monte Carlo section\n";
+        std::cerr << "no reachable vertex pair found; skipping the insertion, "
+                     "second query and Monte Carlo sections\n";
         return 1;
     }
 

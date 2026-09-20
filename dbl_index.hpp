@@ -61,8 +61,9 @@ public:
         }
 
         // Every leaf in a bucket sets the same bit, so one traversal per bucket
-        // gives identical labels to one per leaf -- k' walks instead of
-        // thousands (5,739 -> 128 on wiki-Vote).
+        // gives identical labels to one per leaf -- at most 2k' walks (one
+        // forward per source bucket, one backward per sink bucket) instead of
+        // one per leaf: 5,739 -> 128 on wiki-Vote.
         std::vector<std::vector<int>> srcBuckets(kp_), sinkBuckets(kp_);
         for (int s : sourceLeaves_) srcBuckets[hash(s)].push_back(s);
         for (int t : sinkLeaves_) sinkBuckets[hash(t)].push_back(t);
@@ -223,7 +224,10 @@ private:
     // same way, back when they first arrived.
     //
     // By value, not by reference: callers pass label[u], an element of the very
-    // vector this writes into, so a reference would alias what it mutates.
+    // vector this writes into. A reference happens to be safe today -- the only
+    // write that could reach label[u] ORs it with itself, and nothing here
+    // resizes the vector -- but the copy is 16 bytes and keeps that from being
+    // a precondition of every future edit.
     void propagateForward(int start, Bitset incoming, std::vector<Bitset>& label) {
         if (incoming.none()) return;
         std::queue<int> q;
@@ -237,15 +241,16 @@ private:
                 }
             }
         }
-        // `start` is updated last on purpose: doing it first would satisfy the
-        // subset test above and cut the branch before its descendants are seen
+        // `start` itself is never subset-tested above -- the loop only tests
+        // neighbours -- so this last write is bookkeeping, not a precondition
+        // of the walk: updating it first visits exactly the same vertices.
         if (!isSubset(incoming, label[start])) {
             label[start] |= incoming;
         }
     }
 
     // Mirror of the above along Pre edges, for the DL_out / BL_out labels.
-    // By value for the same aliasing reason.
+    // By value for the same reason.
     void propagateBackward(int start, Bitset incoming, std::vector<Bitset>& label) {
         if (incoming.none()) return;
         std::queue<int> q;
