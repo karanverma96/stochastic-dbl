@@ -260,24 +260,43 @@ ever explored.
 
 ## 7. Correctness and known gaps
 
-`test_dbl.cpp` checks 3,755,400 pairs against a deliberately naive BFS: no
-labels, no pruning, nothing that could share a bug with the index. Four blocks
+`test_dbl.cpp` checks 3,823,036 pairs against a deliberately naive BFS: no
+labels, no pruning, nothing that could share a bug with the index. Seven blocks
 cover static graphs, insertions into an empty index, insertions into a populated
-one (all-pairs after *every* insert, ~97% of the total work, so a later insert
-cannot mask an earlier wrong answer), and a 2,000-vertex graph sampled at 5,000
-pairs. Cases are deliberately sparse with small `k` and `k'`, because a dense
-graph with generous labels lets DL answer everything and leaves BL and the
-fallback untested.
+one (all-pairs after *every* insert, ~95% of the total work, so a later insert
+cannot mask an earlier wrong answer), a 2,000-vertex graph sampled at 5,000
+pairs, and three blocks for paths the others never reach: the theorem exits,
+self-loop insertion, and the `k` / `k'` clamp. Cases are deliberately sparse
+with small `k` and `k'`, because a dense graph with generous labels lets DL
+answer everything and leaves BL and the fallback untested.
+
+Three of those blocks were added to close gaps this document previously listed:
+
+- **The theorem exits** need a graph with no sources and no sinks, which leaves
+  every BL label empty so `blContain` can never rule a pair out and the query
+  falls through to them. Two 2-cycles joined one way, plus a detached 2-cycle,
+  reach Theorem 1 four times and Theorem 2 sixteen times.
+- **Self-loop insertion** is exercised directly, interleaved with ordinary
+  insertions so a label left stale by `insertEdge(u, u)` would show up.
+- **The `k` / `k'` clamp** is asserted through `landmarks()`, which exposes the
+  clamped `k`, rather than inferred from the absence of a crash. Removing the
+  clamp makes the suite die with SIGFPE, because `k' = 0` turns the bucket
+  hash's `leafId % kp_` into a division by zero.
 
 `test_sampler.cpp` checks the estimates against exact reachability computed by
-enumerating all `2^|E|` worlds of a 6-edge graph, and covers `batchEstimate`
-separately because it is a different code path.
+enumerating all `2^|E|` worlds of a 6-edge graph, covers `batchEstimate`
+separately because it is a different code path, and asserts that
+`hoeffdingSampleSize` rejects out-of-range arguments — NaN among them, which the
+earlier negated-form guards let through into a `static_cast<uint64_t>` that is
+undefined behaviour for it.
 
-Known gaps, none of them currently exercised by the suite:
+What the suite still cannot do:
 
-- **Deletions are not supported** at all; label bits are never cleared.
-- **Self-loop insertion** is never tested: every insertion loop skips `u == v`.
-- **The `k` / `k'` clamp** is never tested, though `k' = 0` would make the bucket
-  hash divide by zero.
-- **Theorems 1 and 2** have no dedicated test, and they fire zero times on
-  `wiki-Vote`, so those two lines may never execute during testing.
+- **Deletions are not supported** at all; label bits are never cleared, so there
+  is nothing to test.
+- **The theorem exits cannot be pinned by output.** Both are shortcuts: delete
+  either one and the pruned BFS returns the same answer, so the suite stays
+  green. Mutating them measurably — moving Theorem 1 above the DL check, or
+  making Theorem 2 return `true` — is caught, at 6 and 16 mismatches. Their
+  correctness is testable; their execution is not, short of instrumenting the
+  header.
