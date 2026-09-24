@@ -15,10 +15,13 @@
 // Example: epsilon = 0.01, delta = 0.05 (95% confidence, +/-1% error)
 //   -> N ~= 18445 samples, independent of graph size.
 inline uint64_t hoeffdingSampleSize(double epsilon, double delta) {
-    if (epsilon <= 0.0 || epsilon >= 1.0) {
+    // Positive range, not its negation: NaN fails every comparison, so
+    // `epsilon <= 0.0 || epsilon >= 1.0` would wave it through, and the
+    // static_cast below would then be undefined behaviour
+    if (!(epsilon > 0.0 && epsilon < 1.0)) {
         throw std::invalid_argument("epsilon must be in (0, 1)");
     }
-    if (delta <= 0.0 || delta >= 1.0) {
+    if (!(delta > 0.0 && delta < 1.0)) {
         throw std::invalid_argument("delta must be in (0, 1)");
     }
     double n = (1.0 / (2.0 * epsilon * epsilon)) * std::log(2.0 / delta);

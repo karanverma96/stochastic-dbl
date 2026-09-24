@@ -4,6 +4,7 @@
 #include <iostream>
 #include <iomanip>
 #include <cmath>
+#include <limits>
 
 // Exact answer by walking all 2^|E| possible worlds. The thing Monte Carlo is
 // approximating, and only affordable on a toy graph.
@@ -36,6 +37,7 @@ double exactReachability(const UncertainGraph& ug, int s, int t) {
 
 int main() {
     std::cout << std::fixed << std::setprecision(4);
+    int failures = 0;
 
     // --- Sanity check: Hoeffding sample size behaves as expected ---
     std::cout << "Hoeffding sample sizes:\n";
@@ -45,6 +47,40 @@ int main() {
     }
     std::cout << "\n";
 
+    // --- Rejected arguments, NaN included ---
+    // hoeffdingSampleSize() ends in static_cast<uint64_t>(std::ceil(n)), which
+    // is undefined behaviour for anything not representable. A NaN argument
+    // reaches it unless the guards are written as a positive range: NaN fails
+    // every comparison, so the negated form `epsilon <= 0.0 || epsilon >= 1.0`
+    // lets it straight through. Before the guards were rewritten this returned
+    // 2^63 instead of throwing, which would have made estimate() loop for
+    // effectively ever.
+    {
+        const double nan = std::numeric_limits<double>::quiet_NaN();
+        struct Bad { double eps, delta; const char* what; };
+        std::vector<Bad> bad = {
+            { nan,  0.05, "epsilon = NaN"      },
+            { 0.02, nan,  "delta = NaN"        },
+            { 0.0,  0.05, "epsilon = 0"        },
+            { 1.0,  0.05, "epsilon = 1"        },
+            {-0.1,  0.05, "epsilon negative"   },
+            { 0.02, 0.0,  "delta = 0"          },
+            { 0.02, 1.0,  "delta = 1"          },
+        };
+        int rejected = 0;
+        for (auto& b : bad) {
+            try {
+                uint64_t n = hoeffdingSampleSize(b.eps, b.delta);
+                std::cout << "  ** " << b.what << " was accepted, N=" << n << " **\n";
+                ++failures;
+            } catch (const std::invalid_argument&) {
+                ++rejected;
+            }
+        }
+        std::cout << "invalid argument rejection: " << rejected << "/" << bad.size()
+                  << " rejected\n\n";
+    }
+
     // --- A graph small enough to enumerate: 6 edges, 64 worlds ---
     // 1 and 2 point at each other, so there are cycles to get wrong
     std::vector<std::pair<int,int>> rawEdges = {
@@ -52,7 +88,6 @@ int main() {
     };
     int n = 4;
     std::mt19937 rng(7);
-    int failures = 0;
 
     for (auto scheme : {ProbabilityScheme::Uniform, ProbabilityScheme::Trivalency, ProbabilityScheme::WeightedCascade}) {
         std::string name = scheme == ProbabilityScheme::Uniform ? "Uniform"
