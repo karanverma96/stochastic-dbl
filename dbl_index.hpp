@@ -35,7 +35,10 @@ inline bool isSubset(const Bitset& a, const Bitset& b) {
 class DBLIndex {
 public:
     // k landmarks, kp leaf-hash buckets. Clamped to [1, kMaxLabelBits]: the
-    // bitset caps the top, and a kp below 1 would make hash() go negative.
+    // bitset caps the top, and below 1 a kp stops being a bucket count at all
+    // -- 0 divides by zero in hash(), and a negative one asks selectLeaves()
+    // for a bucket vector of negative size. (It would not make hash() return a
+    // negative: `%` takes the sign of its left operand, which is a vertex id.)
     DBLIndex(Graph& g, int k, int kp)
         : g_(g),
           k_(std::clamp(k, 1, kMaxLabelBits)),
