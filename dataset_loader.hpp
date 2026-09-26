@@ -40,6 +40,11 @@ inline LoadedEdgeList loadSnapEdgeList(const std::string& path) {
 
     std::string line;
     while (std::getline(in, line)) {
+        // Drop the CR of a CRLF file before anything inspects the line. A blank
+        // line there reads as "\r", which is neither empty nor a comment, so it
+        // would fall through and be counted as malformed instead of skipped.
+        // Data lines parse either way, because `>>` stops at the '\r'.
+        if (!line.empty() && line.back() == '\r') line.pop_back();
         if (line.empty() || line[0] == '#') continue;
         std::istringstream iss(line);
         long long a, b;
