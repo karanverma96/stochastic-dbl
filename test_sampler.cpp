@@ -77,8 +77,47 @@ int main() {
                 ++rejected;
             }
         }
-        std::cout << "invalid argument rejection: " << rejected << "/" << bad.size()
-                  << " rejected\n\n";
+        std::cout << "hoeffding argument rejection: " << rejected << "/" << bad.size()
+                  << " rejected\n";
+    }
+
+    // --- UncertainGraph::addEdge rejects what it promises to reject ---
+    // It validates `p` down to NaN but used to accept any vertex id. A negative
+    // one survived the call and only became undefined behaviour later, when
+    // sampleWorld() handed it to Graph::addEdge and it indexed suc_[u]. Nothing
+    // in this repo can produce one -- the loader remaps ids to [0, n) -- but the
+    // function is public, so the contract is asserted rather than assumed.
+    {
+        struct BadEdge { int u, v; double p; const char* what; };
+        std::vector<BadEdge> bad = {
+            {-1,  0, 0.5, "u negative"            },
+            { 0, -1, 0.5, "v negative"            },
+            {-2, -3, 0.5, "both negative"         },
+            { 0,  1, 0.0, "p = 0"                 },
+            { 0,  1, 1.5, "p above 1"             },
+            { 0,  1, std::numeric_limits<double>::quiet_NaN(), "p = NaN" },
+        };
+        int rejected = 0;
+        for (auto& b : bad) {
+            UncertainGraph ug(2);
+            try {
+                ug.addEdge(b.u, b.v, b.p);
+                std::cout << "  ** " << b.what << " was accepted **\n";
+                ++failures;
+            } catch (const std::invalid_argument&) {
+                ++rejected;
+            }
+        }
+        // p = 1.0 is legal -- a certain edge -- and must NOT be rejected
+        try {
+            UncertainGraph ug(2);
+            ug.addEdge(0, 1, 1.0);
+        } catch (const std::invalid_argument&) {
+            std::cout << "  ** p = 1.0 was wrongly rejected **\n";
+            ++failures;
+        }
+        std::cout << "addEdge argument rejection: " << rejected << "/" << bad.size()
+                  << " rejected, p=1.0 accepted\n\n";
     }
 
     // --- A graph small enough to enumerate: 6 edges, 64 worlds ---

@@ -21,6 +21,14 @@ public:
     int numVertices() const { return n_; }
 
     void addEdge(int u, int v, double p) {
+        // Ids are range-checked nowhere downstream: a negative one would pass
+        // silently here, widen n_ by nothing, and only become undefined
+        // behaviour much later, inside sampleWorld -> Graph::addEdge -> suc_[u].
+        // Checked here because this function already validates its other
+        // argument; Graph is a plain container and makes no such promise.
+        if (u < 0 || v < 0) {
+            throw std::invalid_argument("vertex ids must be non-negative");
+        }
         // Positive range, not its negation: NaN fails every comparison, so
         // `p <= 0.0 || p > 1.0` would wave it through
         if (!(p > 0.0 && p <= 1.0)) {
