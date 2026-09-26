@@ -231,25 +231,36 @@ int main() {
         totalMismatches += mismatches;
     }
 
-    // Test 6: the k / k' clamp. Untested, this is the one place a caller's
-    // argument reaches arithmetic directly: kp = 0 would make hash()'s
-    // `leafId % kp_` divide by zero. landmarks() exposes the clamped k, so the
-    // clamp is asserted directly rather than inferred from "it did not crash".
+    // Test 6: the k / k' clamp -- the one place a caller's argument reaches
+    // arithmetic directly. Below 1, kp = 0 makes hash()'s `leafId % kp_` divide
+    // by zero; above 128, a bucket index runs past the bitset. landmarks()
+    // exposes the clamped k, so the bound is asserted rather than inferred from
+    // "it did not crash".
+    //
+    // Two graph sizes on purpose. selectLandmarks() takes min(k_, n), so on a
+    // 30-vertex graph an unclamped k = 200 and a clamped k = 128 both come out
+    // as 30 landmarks and the assertion cannot separate them -- the ceiling is
+    // only observable above it. The n = 200 cases carry no all-pairs sweep
+    // because they need none: an unclamped kp makes build() itself throw, long
+    // before any query runs.
+    //
+    // Sensitivity, measured by mutating the constructor:
+    //   clamp dropped entirely             -> SIGFPE, kp = 0 divides by zero
+    //   ceiling dropped, lower bound kept  -> std::out_of_range from bitset::set(128)
     {
         std::mt19937 rng(5042);
-        int n = 30;
-        Graph g = makeRandomGraph(n, 60, rng);
-
-        struct ClampCase { int k, kp, expectLandmarks; const char* what; };
+        struct ClampCase { int n, k, kp, expectLandmarks; bool allPairs; const char* what; };
         std::vector<ClampCase> clampCases = {
-            { 0,   0, 1,               "k=0, kp=0 -> clamped up to 1"        },
-            {-5,  -5, 1,               "negative -> clamped up to 1"         },
-            {200, 200, 30,             "above 128 -> clamped to min(128, n)" },
-            {128, 128, 30,             "at the ceiling"                      },
+            { 30,   0,   0,   1, true,  "k=0, kp=0 -> clamped up to 1" },
+            { 30,  -5,  -5,   1, true,  "negative -> clamped up to 1"  },
+            { 30, 200, 200,  30, true,  "ceiling still capped by n"    },
+            {200, 200, 200, 128, false, "above the ceiling -> 128"     },
+            {200, 128, 128, 128, false, "at the ceiling"               },
         };
 
         int checked = 0, mismatches = 0;
         for (auto& c : clampCases) {
+            Graph g = makeRandomGraph(c.n, c.n * 2, rng);
             DBLIndex idx(g, c.k, c.kp);
             idx.build();
             int got = static_cast<int>(idx.landmarks().size());
@@ -258,7 +269,7 @@ int main() {
                 std::cerr << "CLAMP MISMATCH (" << c.what << "): landmarks="
                           << got << " expected=" << c.expectLandmarks << "\n";
             }
-            checkAllPairs(g, idx, n, checked, mismatches);
+            if (c.allPairs) checkAllPairs(g, idx, c.n, checked, mismatches);
         }
         std::cout << "k/k-prime clamp test  pairs_checked=" << checked
                   << "  mismatches=" << mismatches << "\n";
