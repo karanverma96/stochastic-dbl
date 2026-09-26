@@ -244,7 +244,7 @@ pays off once the query list runs into the thousands.
 
 **The resolution floor.** With `N = 4,612` the smallest non-zero estimate is
 `1/4612 ≈ 2.2e-4`. WeightedCascade's average `p` on this graph is about 0.023, so
-a three-hop path carries roughly `1.2e-5` — nearly 20x below the floor, and the
+a three-hop path carries roughly `1.2e-5` — about 18x below the floor, and the
 scheme reports exactly `0.0000`. That is the estimator's resolution, not a bug:
 Hoeffding bounds *absolute* error, and an estimator that always returned 0 would
 satisfy it at this ε. Resolving probabilities that small needs a relative-error
@@ -260,7 +260,7 @@ ever explored.
 
 ## 7. Correctness and known gaps
 
-`test_dbl.cpp` checks 3,823,036 pairs against a deliberately naive BFS: no
+`test_dbl.cpp` checks 3,822,136 pairs against a deliberately naive BFS: no
 labels, no pruning, nothing that could share a bug with the index. Seven blocks
 cover static graphs, insertions into an empty index, insertions into a populated
 one (all-pairs after *every* insert, ~95% of the total work, so a later insert
@@ -279,9 +279,14 @@ Three of those blocks were added to close gaps this document previously listed:
 - **Self-loop insertion** is exercised directly, interleaved with ordinary
   insertions so a label left stale by `insertEdge(u, u)` would show up.
 - **The `k` / `k'` clamp** is asserted through `landmarks()`, which exposes the
-  clamped `k`, rather than inferred from the absence of a crash. Removing the
-  clamp makes the suite die with SIGFPE, because `k' = 0` turns the bucket
-  hash's `leafId % kp_` into a division by zero.
+  clamped `k`, rather than inferred from the absence of a crash. The two bounds
+  fail in different ways and need different graphs to catch. Dropping the clamp
+  entirely kills the suite with SIGFPE, because `k' = 0` turns the bucket hash's
+  `leafId % kp_` into a division by zero. Dropping only the ceiling throws
+  `std::out_of_range` from `bitset::set(128)` during `build()` — but only on a
+  graph with more than 128 vertices, since `selectLandmarks` takes
+  `min(k, n)` and a smaller graph hides the difference. The test therefore runs
+  its ceiling cases at `n = 200`.
 
 `test_sampler.cpp` checks the estimates against exact reachability computed by
 enumerating all `2^|E|` worlds of a 6-edge graph, covers `batchEstimate`

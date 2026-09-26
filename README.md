@@ -52,8 +52,16 @@ via **Monte Carlo sampling**:
 
 - Sample the graph `N` times — each edge is included independently with
   probability `p(u, v)`.
-- Run the DBL reachability check on each sampled ("possible world") graph.
+- Check whether `t` is reachable from `s` in each sampled ("possible world")
+  graph.
 - Estimate `P(s ⤳ t) ≈ (# samples where t is reachable) / N`.
+
+Two entry points implement that middle step differently. The default,
+`estimate()`, never materialises a world at all: it walks outward from `s` and
+draws an edge's coin only when the search reaches it, which is equivalent and
+far cheaper. `batchEstimate()` does build each world and index it with DBL,
+which only pays off when thousands of pairs are asked against the same worlds.
+Both are covered under *Why Monte Carlo still costs milliseconds* below.
 
 ### 3. Sample Size via Hoeffding's Inequality
 Rather than choosing `N` arbitrarily, the required number of samples is
