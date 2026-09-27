@@ -29,8 +29,9 @@ public:
         if (u < 0 || v < 0) {
             throw std::invalid_argument("vertex ids must be non-negative");
         }
-        // Positive range, not its negation: NaN fails every comparison, so
-        // `p <= 0.0 || p > 1.0` would wave it through
+        // States what is accepted instead of negating what is not. The negated
+        // form -- `p <= 0.0 || p > 1.0` -- lets NaN through, since NaN makes
+        // <, >, <=, >= and == all false (only != is true for it).
         if (!(p > 0.0 && p <= 1.0)) {
             throw std::invalid_argument("probability must be in (0, 1]");
         }
