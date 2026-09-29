@@ -110,11 +110,13 @@ private:
         while (!q.empty() && !found) {
             int p = q.front(); q.pop();
             for (auto& [x, prob] : adj_[p]) {
-                // Reached already, so this edge cannot change the answer. Needs
-                // no special case for t, which returns below before it is ever
-                // marked visited.
+                // Not just a shortcut: without this, a successful draw would
+                // queue x a second time, and x's outgoing edges would be drawn
+                // twice in one sample -- which reads as a higher probability.
                 if (visited_[x]) continue;
                 if (unit(rng_) < prob) {
+                    // Returns before t is ever marked, so the guard above can
+                    // never skip an edge into t.
                     if (x == t) { found = true; break; }
                     visited_[x] = 1;
                     touched_.push_back(x);

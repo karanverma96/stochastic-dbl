@@ -232,15 +232,22 @@ sequenceDiagram
 
 Edges the search never reaches cannot lie on an `s-t` path, so their coins cannot
 change the outcome — the result is distributed exactly as if the whole world had
-been sampled first and then walked. On `wiki-Vote` this skips about 99% of the
-coin flips. Two details make it fast in practice: `visited_` is reused across
-samples and cleared through a `touched_` list rather than refilled, and a vertex
-already visited short-circuits before its coin is drawn.
+been sampled first and then walked. That equivalence rests on a vertex already
+visited short-circuiting before its coin is drawn: without it a successful draw
+would queue the vertex a second time, one edge would be drawn twice in a single
+sample, and the estimate would read high. On `wiki-Vote` this skips about 99% of
+the coin flips. One further detail makes it fast in practice: `visited_` is reused
+across samples and cleared through a `touched_` list rather than refilled.
 
 **`batchEstimate(queries)` — eager, many pairs.** It materialises each world,
-builds a DBL index over it, and answers every query against that index. Indexing
-a world costs up to `2k + 2k'` traversals against one BFS per pair, so it only
-pays off once the query list runs into the thousands.
+builds a DBL index over it, and answers every query against that index. The
+alternative worth measuring against is not a BFS per pair — that has to
+materialise the world too — but `estimate()`, which never materialises one at
+all. Per world this pays one draw per edge plus at most `2k + 2k'` index
+traversals, and every query in the list shares that cost, while `estimate()` pays
+for the edges each search reaches and shares nothing. Short query lists therefore
+favour `estimate()` and long ones favour this; the crossover is dataset-dependent
+and the costs behind it are in the [README](../README.md)'s benchmark section.
 
 **The resolution floor.** With `N = 4,612` the smallest non-zero estimate is
 `1/4612 ≈ 2.2e-4`. WeightedCascade's average `p` on this graph is about 0.023, so
