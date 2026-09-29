@@ -97,7 +97,8 @@ private:
     // arrives at it. Each vertex is dequeued once, so no edge is drawn twice,
     // and an edge never reached cannot sit on an s-t path -- so this comes out
     // distributed exactly like sampling the whole world and then walking it.
-    // On wiki-Vote that skips about 99% of the coin flips.
+    // The share of draws this saves is a property of the dataset, not of the
+    // code; the measured figure is in README, "Benchmarks".
     bool lazyReachable(int s, int t) {
         if (s == t) return true;
         std::uniform_real_distribution<double> unit(0.0, 1.0);

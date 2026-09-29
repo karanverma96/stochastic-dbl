@@ -66,7 +66,8 @@ public:
         // Every leaf in a bucket sets the same bit, so one traversal per bucket
         // gives identical labels to one per leaf -- at most 2k' walks (one
         // forward per source bucket, one backward per sink bucket) instead of
-        // one per leaf: 5,739 -> 128 on wiki-Vote.
+        // one per leaf. How many leaves that collapses depends on the dataset;
+        // for the measured case see docs/ARCHITECTURE.md, "2. Building the index".
         std::vector<std::vector<int>> srcBuckets(kp_), sinkBuckets(kp_);
         for (int s : sourceLeaves_) srcBuckets[hash(s)].push_back(s);
         for (int t : sinkLeaves_) sinkBuckets[hash(t)].push_back(t);
