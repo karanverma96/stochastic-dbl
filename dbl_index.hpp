@@ -228,10 +228,11 @@ private:
     // same way, back when they first arrived.
     //
     // By value, not by reference: callers pass label[u], an element of the very
-    // vector this writes into. A reference happens to be safe today -- the only
-    // write that could reach label[u] ORs it with itself, and nothing here
-    // resizes the vector -- but the copy is 16 bytes and keeps that from being
-    // a precondition of every future edit.
+    // vector this writes into. A reference would be safe today, but not for the
+    // obvious reason -- when `incoming` aliases label[x], the subset test is `a`
+    // against `a`, which is trivially true, so the branch is skipped and no
+    // write happens at all. The copy is 16 bytes and keeps that from being a
+    // precondition of every future edit.
     void propagateForward(int start, Bitset incoming, std::vector<Bitset>& label) {
         if (incoming.none()) return;
         std::queue<int> q;
