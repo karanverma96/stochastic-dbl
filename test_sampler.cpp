@@ -122,11 +122,21 @@ int main() {
 
     // --- A graph small enough to enumerate: 6 edges, 64 worlds ---
     // 1 and 2 point at each other, so there are cycles to get wrong
+    //
+    // The tolerance is a multiple of this estimator's own standard error,
+    // sqrt(p(1-p)/N), not a multiple of epsilon. Epsilon is a fixed absolute
+    // bar, so on a pair whose probability is near zero it sits tens of standard
+    // errors out and stops discriminating: a bias bug can shift that row and
+    // still land well inside it. The sample size is likewise larger than
+    // Hoeffding needs for epsilon = 0.01 -- it is chosen so a sampling bug
+    // lands far outside the bar while honest noise stays far inside it, which
+    // costs about a tenth of a second.
     std::vector<std::pair<int,int>> rawEdges = {
         {0, 1}, {1, 3}, {0, 2}, {2, 3}, {1, 2}, {2, 1}
     };
     int n = 4;
     std::mt19937 rng(7);
+    const double sigmaTolerance = 4.0;
 
     for (auto scheme : {ProbabilityScheme::Uniform, ProbabilityScheme::Trivalency, ProbabilityScheme::WeightedCascade}) {
         std::string name = scheme == ProbabilityScheme::Uniform ? "Uniform"
@@ -137,15 +147,17 @@ int main() {
         double exact = exactReachability(ug, 0, 3);
 
         MonteCarloSampler sampler(ug, /*seed=*/99);
-        auto est = sampler.estimate(0, 3, /*epsilon=*/0.01, /*delta=*/0.05);
+        auto est = sampler.estimate(0, 3, /*epsilon=*/0.002, /*delta=*/0.05);
 
         double diff = std::abs(exact - est.probability);
-        bool ok = diff <= est.epsilon * 3;
+        double sigma = std::sqrt(exact * (1.0 - exact) / static_cast<double>(est.samples));
+        bool ok = diff <= sigmaTolerance * sigma;
         if (!ok) ++failures;
         std::cout << "[" << name << "] exact=" << exact
                   << "  monte_carlo=" << est.probability
                   << "  samples=" << est.samples
                   << "  |diff|=" << diff
+                  << "  (" << (diff / sigma) << " sigma)"
                   << (ok ? "  OK" : "  ** OUT OF TOLERANCE **")
                   << "\n";
     }
