@@ -262,6 +262,17 @@ int main() {
         for (auto& c : clampCases) {
             Graph g = makeRandomGraph(c.n, c.n * 2, rng);
             DBLIndex idx(g, c.k, c.kp);
+            // Before build(), not after: an unclamped kp divides by zero inside
+            // hash(), and the suite would die there with the assertion below
+            // never reached.
+            if (idx.landmarkBudget() < 1 || idx.landmarkBudget() > kMaxLabelBits ||
+                idx.bucketCount() < 1 || idx.bucketCount() > kMaxLabelBits) {
+                ++mismatches;
+                std::cerr << "CLAMP MISMATCH (" << c.what << "): k_=" << idx.landmarkBudget()
+                          << " kp_=" << idx.bucketCount() << " outside [1, "
+                          << kMaxLabelBits << "]\n";
+                continue;
+            }
             idx.build();
             int got = static_cast<int>(idx.landmarks().size());
             if (got != c.expectLandmarks) {

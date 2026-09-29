@@ -124,6 +124,12 @@ public:
     const Bitset& dlOut(int v) const { return DLout_[v]; }
     const std::vector<int>& landmarks() const { return landmarks_; }
 
+    // The clamped arguments, so a test can assert the bound before build() runs
+    // -- an unclamped kp divides by zero inside hash(), and a crash there says
+    // only that something broke, not which argument was let through.
+    int landmarkBudget() const { return k_; }
+    int bucketCount() const { return kp_; }
+
 private:
     Graph& g_;
     int k_, kp_;
