@@ -6,8 +6,8 @@
 #include <queue>
 #include <vector>
 
-// Plain BFS on an already-materialised world. Only batchEstimate() needs this,
-// because it indexes a real graph; estimate() never builds a world at all.
+/* Normal BFS on a materialized world. Used by the test suite's
+exhaustive ground truth, which enumerates whole worlds.*/
 inline bool bfsReachable(const Graph& g, int s, int t) {
     if (s == t) return true;
     std::vector<char> visited(g.numVertices(), 0);
@@ -48,14 +48,24 @@ public:
         return { static_cast<double>(successes) / static_cast<double>(n), n, epsilon, delta };
     }
 
-    // Many pairs against the same worlds: build one DBL index per world and
-    // query it, instead of a BFS per (world, pair).
+    // The Strategy (Batching): We generate and index a graph ("world") once,
+    // then run a whole list of queries against it, rather than rebuilding the
+    // graph for every individual query.
     //
-    // Worth it only in bulk. Indexing a world costs up to 2k + 2k' traversals
-    // -- two per landmark, one per non-empty source bucket and one per
-    // non-empty sink bucket, so at most 96 at the sizes below -- against one
-    // BFS per pair, so it does not pay until the query list runs into the
-    // thousands.
+    // The True Competitor (Lazy Evaluation): The baseline isn't a per-pair BFS
+    // (which also requires full graph generation). The real competitor is
+    // estimate(), which evaluates "on-the-fly." It only calculates edges as
+    // needed during a search and throws them away immediately after.
+    //
+    // The Trade-off (Upfront vs. Amortized Cost): This function does heavy
+    // lifting upfront by generating the entire graph and traversing indexes.
+    // But because it shares that cost across the entire list of queries, it
+    // scales exceptionally well.
+    //
+    // The Verdict: Use estimate() for short lists of queries (to avoid
+    // unnecessary upfront generation) and this function for long lists. The
+    // exact crossover point is dataset-dependent; the measured costs behind it
+    // are in README, "Benchmarks".
     std::vector<double> batchEstimate(
         const std::vector<std::pair<int,int>>& queries,
         double epsilon = 0.01,
